@@ -1,7 +1,5 @@
-# =============================================================================
 # TOBIAS BOT PRO - NOTEBOOK PARA GOOGLE COLAB
 # Salve este arquivo como: Tobias_Bot_Pro_Complete.ipynb
-# =============================================================================
 
 # INSTRUÇÕES:
 # 1. Abra o Google Colab (colab.research.google.com)
@@ -11,9 +9,7 @@
 # 5. File > Save to GitHub
 # 6. Salve como: Tobias_Bot_Pro_Complete.ipynb
 
-# =============================================================================
 # CÉLULA 1: MARKDOWN - HEADER
-# =============================================================================
 """
 Copie este MARKDOWN em uma célula de texto:
 
