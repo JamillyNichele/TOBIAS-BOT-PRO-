@@ -1,0 +1,415 @@
+"""
+Tobias Bot Pro - Sistema Avançado de Transcrição de Vídeos do YouTube
+
+Este módulo fornece uma classe principal para transcrição automática
+de vídeos do YouTube usando IA (Faster Whisper) com interface moderna.
+
+Autor: [SEU NOME]
+Versão: 2.0.0
+Licença: MIT
+"""
+
+import os
+import re
+import torch
+import logging
+from typing import Optional, List
+import subprocess
+import sys
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+class TobiasBotPro:
+    """
+    Sistema avançado para transcrição de vídeos do YouTube.
+    
+    Combina download inteligente com processamento de áudio e transcrição
+    usando modelos de IA de última geração.
+    
+    Attributes:
+        model: Modelo Faster Whisper carregado
+        device: Dispositivo de processamento (cuda/cpu)
+        model_size: Tamanho do modelo ('tiny', 'base', 'small', 'medium', 'large')
+    
+    Example:
+        >>> bot = TobiasBotPro()
+        >>> texto = bot.process_video("https://youtube.com/watch?v=VIDEO_ID")
+        >>> print(texto)
+    """
+    
+    def __init__(self, model_size: str = "base", device: str = "auto"):
+        """
+        Inicializa o Tobias Bot Pro.
+        
+        Args:
+            model_size: Tamanho do modelo Whisper
+            device: Dispositivo ('cuda', 'cpu', 'auto')
+        """
+        self.model_size = model_size
+        self.device = self._detect_device(device)
+        self.compute_type = "float16" if self.device == "cuda" else "int8"
+        self.model = None
+        
+        logger.info("🤖 Inicializando Tobias Bot Pro...")
+        self._setup_model()
+        
+    def _detect_device(self, device: str) -> str:
+        """Detecta o melhor dispositivo disponível."""
+        if device == "auto":
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        return device
+    
+    def _setup_model(self) -> bool:
+        """Carrega o modelo Faster Whisper."""
+        try:
+            from faster_whisper import WhisperModel
+            
+            logger.info(f"🧠 Carregando modelo {self.model_size} ({self.device})...")
+            
+            self.model = WhisperModel(
+                self.model_size,
+                device=self.device,
+                compute_type=self.compute_type
+            )
+            
+            logger.info("✅ Modelo carregado com sucesso!")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao carregar modelo: {e}")
+            return False
+    
+    def validate_youtube_url(self, url: str) -> Optional[str]:
+        """
+        Valida e normaliza URL do YouTube.
+        
+        Args:
+            url: URL para validar
+            
+        Returns:
+            URL normalizada ou None se inválida
+        """
+        patterns = [
+            r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)',
+            r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]+)',
+            r'(?:https?://)?(?:m\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                return f"https://www.youtube.com/watch?v={video_id}"
+        
+        return None
+    
+    def download_video(self, url: str) -> Optional[str]:
+        """
+        Baixa vídeo usando múltiplas estratégias.
+        
+        Args:
+            url: URL do vídeo
+            
+        Returns:
+            Caminho do arquivo de áudio ou None
+        """
+        clean_url = self.validate_youtube_url(url)
+        if not clean_url:
+            logger.error("❌ URL inválida")
+            return None
+        
+        logger.info(f"🔗 Processando: {clean_url}")
+        
+        # Tentar yt-dlp primeiro
+        audio_file = self._download_with_ydl(clean_url)
+        if audio_file:
+            return audio_file
+        
+        # Tentar pytube como backup
+        audio_file = self._download_with_pytube(clean_url)
+        if audio_file:
+            return audio_file
+        
+        logger.error("❌ Todas as estratégias falharam")
+        return None
+    
+    def _download_with_ydl(self, url: str) -> Optional[str]:
+        """Download usando yt-dlp com múltiplas configurações."""
+        try:
+            import yt_dlp
+            
+            configs = [
+                # Configuração básica
+                {
+                    'format': 'bestaudio[ext=m4a]/bestaudio',
+                    'outtmpl': 'audio_%(id)s.%(ext)s',
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'wav',
+                        'preferredquality': '128',
+                    }],
+                },
+                # Configuração com headers mobile
+                {
+                    'format': 'worst[ext=mp4]/worst',
+                    'outtmpl': 'audio_%(id)s.%(ext)s',
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'wav',
+                        'preferredquality': '96',
+                    }],
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36'
+                    },
+                    'extractor_args': {
+                        'youtube': {'player_client': ['android']}
+                    },
+                }
+            ]
+            
+            for i, config in enumerate(configs, 1):
+                try:
+                    logger.info(f"📥 Tentativa {i} com yt-dlp...")
+                    with yt_dlp.YoutubeDL(config) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        return self._find_audio_file(info['id'])
+                except Exception as e:
+                    logger.warning(f"Tentativa {i} falhou: {str(e)[:50]}...")
+                    continue
+                    
+        except ImportError:
+            logger.error("yt-dlp não encontrado")
+        
+        return None
+    
+    def _download_with_pytube(self, url: str) -> Optional[str]:
+        """Download usando pytube como backup."""
+        try:
+            from pytube import YouTube
+            
+            logger.info("📥 Tentando com pytube...")
+            yt = YouTube(url)
+            
+            # Pegar stream de áudio
+            audio_stream = yt.streams.filter(only_audio=True).first()
+            if not audio_stream:
+                return None
+            
+            # Download
+            filename = f"audio_{yt.video_id}.mp4"
+            audio_stream.download(filename=filename)
+            
+            # Converter para WAV
+            wav_file = f"audio_{yt.video_id}.wav"
+            if self._convert_to_wav(filename, wav_file):
+                os.remove(filename)
+                return wav_file
+            
+            return filename
+            
+        except Exception as e:
+            logger.warning(f"Pytube falhou: {e}")
+        
+        return None
+    
+    def _find_audio_file(self, video_id: str) -> Optional[str]:
+        """Encontra arquivo de áudio baixado."""
+        extensions = ['.wav', '.m4a', '.mp3', '.webm', '.mp4']
+        
+        for ext in extensions:
+            filename = f"audio_{video_id}{ext}"
+            if os.path.exists(filename):
+                # Converter para WAV se necessário
+                if ext != '.wav':
+                    wav_file = f"audio_{video_id}.wav"
+                    if self._convert_to_wav(filename, wav_file):
+                        os.remove(filename)
+                        return wav_file
+                
+                return filename
+        
+        return None
+    
+    def _convert_to_wav(self, input_file: str, output_file: str) -> bool:
+        """Converte arquivo para formato WAV."""
+        try:
+            subprocess.run([
+                'ffmpeg', '-i', input_file, '-ar', '16000',
+                '-ac', '1', '-c:a', 'pcm_s16le', output_file, '-y'
+            ], capture_output=True, check=True)
+            return True
+        except:
+            return False
+    
+    def transcribe_audio(self, audio_file: str) -> Optional[str]:
+        """
+        Transcreve arquivo de áudio para texto.
+        
+        Args:
+            audio_file: Caminho do arquivo de áudio
+            
+        Returns:
+            Texto transcrito ou None
+        """
+        if not self.model:
+            logger.error("❌ Modelo não carregado")
+            return None
+        
+        if not os.path.exists(audio_file):
+            logger.error(f"❌ Arquivo não encontrado: {audio_file}")
+            return None
+        
+        try:
+            logger.info("🎯 Iniciando transcrição...")
+            
+            segments, info = self.model.transcribe(audio_file, language="pt")
+            
+            logger.info(f"📊 Idioma: {info.language} "
+                       f"(confiança: {info.language_probability:.2f})")
+            
+            # Processar segmentos
+            full_text = ""
+            segment_count = 0
+            
+            for segment in segments:
+                full_text += segment.text + " "
+                segment_count += 1
+                
+                if segment_count % 10 == 0:
+                    logger.info(f"   📝 {segment_count} segmentos processados...")
+            
+            logger.info(f"✅ Transcrição concluída! ({segment_count} segmentos)")
+            return full_text.strip()
+            
+        except Exception as e:
+            logger.error(f"❌ Erro na transcrição: {e}")
+            return None
+    
+    def process_video(self, url: str) -> Optional[str]:
+        """
+        Processa vídeo completo: download + transcrição.
+        
+        Args:
+            url: URL do vídeo do YouTube
+            
+        Returns:
+            Texto transcrito ou None
+        """
+        logger.info("🚀 PROCESSANDO VÍDEO")
+        logger.info("=" * 40)
+        
+        try:
+            # 1. Download
+            audio_file = self.download_video(url)
+            if not audio_file:
+                return None
+            
+            # 2. Transcrição
+            transcription = self.transcribe_audio(audio_file)
+            
+            # 3. Limpeza
+            self._cleanup_files(audio_file)
+            
+            logger.info("✅ PROCESSAMENTO CONCLUÍDO!")
+            return transcription
+            
+        except Exception as e:
+            logger.error(f"❌ Erro crítico: {e}")
+            return None
+    
+    def _cleanup_files(self, *files: str) -> None:
+        """Remove arquivos temporários."""
+        for file_path in files:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"🧹 Removido: {file_path}")
+            except Exception as e:
+                logger.warning(f"⚠️ Não foi possível remover {file_path}: {e}")
+
+
+# Funções utilitárias
+def test_url(url: str) -> bool:
+    """Testa uma URL do YouTube rapidamente."""
+    try:
+        import yt_dlp
+        
+        bot = TobiasBotPro()
+        clean_url = bot.validate_youtube_url(url)
+        
+        if not clean_url:
+            print("❌ URL inválida")
+            return False
+        
+        print(f"✅ URL válida: {clean_url}")
+        
+        # Testar acesso
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            info = ydl.extract_info(clean_url, download=False)
+            print(f"🎬 Título: {info.get('title', 'N/A')}")
+            print(f"⏱️ Duração: {info.get('duration', 'N/A')}s")
+            return True
+            
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+        return False
+
+
+def fix_youtube_403():
+    """Corrige problemas de erro 403 do YouTube."""
+    print("🔧 Aplicando correções para erro 403...")
+    
+    try:
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"
+        ])
+        print("✅ yt-dlp atualizado com sucesso")
+    except Exception as e:
+        print(f"❌ Erro na atualização: {e}")
+
+
+def main():
+    """Função principal para uso via linha de comando."""
+    if len(sys.argv) != 2:
+        print("Uso: python tobias_bot.py <URL_DO_YOUTUBE>")
+        print("Exemplo: python tobias_bot.py https://youtube.com/watch?v=dQw4w9WgXcQ")
+        sys.exit(1)
+    
+    url = sys.argv[1]
+    
+    print("🤖 Tobias Bot Pro - Transcrição via Terminal")
+    print("=" * 50)
+    
+    # Criar e usar bot
+    bot = TobiasBotPro()
+    
+    if not bot.model:
+        print("❌ Erro na inicialização do modelo")
+        sys.exit(1)
+    
+    # Processar vídeo
+    transcricao = bot.process_video(url)
+    
+    if transcricao:
+        print("\n📝 TRANSCRIÇÃO:")
+        print("=" * 50)
+        print(transcricao)
+        
+        # Salvar em arquivo
+        filename = "transcricao.txt"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(transcricao)
+        print(f"\n💾 Salvo em: {filename}")
+    else:
+        print("❌ Falha na transcrição")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
