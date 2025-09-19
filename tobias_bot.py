@@ -4,7 +4,7 @@ Tobias Bot Pro - Sistema Avançado de Transcrição de Vídeos do YouTube
 Este módulo fornece uma classe principal para transcrição automática
 de vídeos do YouTube usando IA (Faster Whisper) com interface moderna.
 
-Autor: [SEU NOME]
+Autor: Jamilly Nichele
 Versão: 2.0.0
 Licença: MIT
 """
