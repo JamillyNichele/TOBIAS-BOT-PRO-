@@ -1,3 +1,4 @@
+LInk Colab : https://colab.research.google.com/drive/1FO8vIF7PJ1qnfwyfVSCU1jIbGtQ1z87g?usp=sharing
 # TOBIAS BOT PRO - NOTEBOOK PARA GOOGLE COLAB
 # Salve este arquivo como: Tobias_Bot_Pro_Complete.ipynb
 
