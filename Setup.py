@@ -18,8 +18,8 @@ REQUIREMENTS = (HERE / "requirements.txt").read_text(encoding="utf-8").splitline
 setup(
     name="tobias-bot-pro",
     version="2.0.0",
-    author="[SEU NOME]",
-    author_email="[SEU EMAIL]",
+    author="Jamilly Nichele",
+    author_email="jamillynichele@gmail.com",
     description="Sistema Avançado de Transcrição de Vídeos do YouTube usando IA",
     long_description=README,
     long_description_content_type="text/markdown",
