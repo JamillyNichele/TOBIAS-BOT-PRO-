@@ -9,6 +9,7 @@ LInk Colab : https://colab.research.google.com/drive/1FO8vIF7PJ1qnfwyfVSCU1jIbGt
 # 4. Copie e cole cada seção abaixo em células separadas
 # 5. File > Save to GitHub
 # 6. Salve como: Tobias_Bot_Pro_Complete.ipynb
+# 7.Na paginá do Colab, não esqueça de alterar o ambiente de execução para GPUs: T4, para mais ser mais rápido.
 
 # CÉLULA 1: MARKDOWN - HEADER
 """
